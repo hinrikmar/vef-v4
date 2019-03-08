@@ -12,7 +12,6 @@ function catchErrors(fn) {
 async function createAssignment(req, res) {
 
   const { title, postion, completed, due} = req.body;
-  
   const result = await newAsignment(title, postion, completed, due);
   res.status(200).json(result);
 }
