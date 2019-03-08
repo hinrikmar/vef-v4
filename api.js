@@ -9,14 +9,10 @@ function catchErrors(fn) {
   return (req, res, next) => fn(req, res, next).catch(next);
 }
 
-/* todo útfæra vefþjónustuskil */
-
 async function createAssignment(req, res) {
 
   const { title, postion, completed, due} = req.body;
-
   
-
   const result = await newAsignment(title, postion, completed, due);
   res.status(200).json(result);
 }
