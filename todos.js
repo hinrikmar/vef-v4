@@ -54,14 +54,14 @@ async function listAssignments(order = 'ASC', Completed){
       const result = await getCompletedAssignmets('DESC');
       return {
         success: true,
-        item: item.rows,
+        item: result.rows,
       };
     }
   
     const result = await getCompletedAssignmets('ASC');
     return {
       success: true,
-      item: item.rows,
+      item: result.rows,
     };
   }
 
@@ -69,14 +69,14 @@ async function listAssignments(order = 'ASC', Completed){
     const result = await getAssignmets('DESC');
     return {
       success: true,
-      item: item.rows,
+      item: result.rows,
     };
   }
 
   const result = await getAssignmets('ASC');
   return {
     success: true,
-    item: item.rows,
+    item: result.rows,
   };
 }
 
@@ -95,7 +95,7 @@ async function newAsignment(title, position, completed = false, due){
   const result = await createAssignmet([xss(title), xss(position), xss(completed), xss(due)]);
   return {
     success: true,
-    item: item.rows,
+    item: result.rows,
   };
 }
 
@@ -110,7 +110,7 @@ async function getById(id){
   const result = await getAssignmet(id);
   return {
     success: true,
-    item: item.rows,
+    item: result.rows,
   };
 }
 
@@ -182,7 +182,7 @@ async function deleteById(id){
   result = await deleteRow(id);
   return {
     success: true,
-    item: item.rows,
+    item: result.rows[0],
   };
 }
 
