@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "nodemon app.js",
     "start": "node app.js",
-    "setup": "node setup.js",
     "eslint": "eslint *.js",
-    "test": "npm run eslint"
+    "test": "npm run eslint",
+    "setup": "node setup.js",
+    "jsdoc": "jsdoc *.js"
   },
   "keywords": [],
   "author": "",
@@ -16,16 +17,15 @@
   "dependencies": {
     "dotenv": "6.2.0",
     "express": "4.16.4",
-    "pg": "^7.8.0",
-    "redis": "^2.8.0",
-    "util": "^0.11.1",
-    "validator": "^10.11.0",
-    "xss": "^1.0.3"
+    "pg": "7.8.0",
+    "validator": "10.11.0",
+    "xss": "1.0.3"
   },
   "devDependencies": {
     "eslint": "5.14.1",
     "eslint-config-airbnb-base": "13.1.0",
     "eslint-plugin-import": "2.16.0",
+    "jsdoc": "^3.5.5",
     "nodemon": "1.18.10"
   }
 }

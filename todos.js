@@ -1,195 +1,273 @@
+/** @module todos */
+
 const xss = require('xss');
 const isISO8601 = require('validator/lib/isISO8601');
+const { query } = require('./db');
 
-const { getAssignmets, getCompletedAssignmets, createAssignmet, getAssignmet, updateAssignment, deleteRow} = require('./db');
+/**
+ * @typedef {object} TodoItem
+ * @property {string} title Titill á item
+ * @property {object} due Dagsetning þegar item á að klárast, má vera tómt
+ * @property {string} position Röðun á item, heiltala > 0, má vera tómt
+ * @property {string} completed Hvort item sé búið, má vera tómt
+ */
 
+/**
+ * @typedef {object} Result
+ * @property {boolean} success Hvort aðgerð hafi tekist
+ * @property {boolean} notFound Hvort hlutur hafi fundist
+ * @property {array} validation Fykli af villum, ef einhverjar
+ * @property {TodoItem} item Todo item
+ */
+
+/**
+ * Athugar hvort strengur sé "tómur", þ.e.a.s. `null`, `undefined`.
+ *
+ * @param {string} s Strengur til að athuga
+ * @returns {boolean} `true` ef `s` er "tómt", annars `false`
+ */
 function isEmpty(s) {
   return s == null && !s;
 }
 
-function validate(title, due, position, completed) {
+/**
+ * Staðfestir að todo item sé gilt. Ef verið er að breyta item sem nú þegar er
+ * til, þá er `patching` sent inn sem `true`.
+ *
+ * @param {TodoItem} todo Todo item til að staðfesta
+ * @param {boolean} [patching=false]
+ * @returns {array} Fylki af villum sem komu upp, tómt ef engin villa
+ */
+function validate({ title, due, position, completed } = {}, patching = false) {
   const errors = [];
 
-  if (!isEmpty(title)) {
-    if (typeof title !== 'string' || !(title.length > 0 && title.length < 129)) {
+  if (!patching || !isEmpty(title)) {
+    if (typeof title !== 'string' || title.length < 1 || title.length > 128) {
       errors.push({
         field: 'title',
-        error: 'Titill verður að vera strengur sem er 1 til 128 stafir',
+        message: 'Titill verður að vera strengur sem er 1 til 128 stafir',
       });
     }
   }
+
   if (!isEmpty(due)) {
-    if (!isISO8601(due)) {
+    if (typeof due !== 'string' || !isISO8601(due)) {
       errors.push({
         field: 'due',
-        error: 'Dagsetning verður að vera gild ISO 8601 dagsetning',
+        message: 'Dagsetning verður að vera gild ISO 8601 dagsetning',
       });
     }
   }
+
   if (!isEmpty(position)) {
-    console.log(parseInt(position, 10))
-    console.log((parseInt(position, 10) === 0))
-    console.log((position === '0'))
-    if (isNaN(parseInt(position, 10)) || parseInt(position, 10) < 0 ) {
+    if (typeof position !== 'number' || Number(position) < 0) {
       errors.push({
         field: 'position',
-        error: 'Staðsetning verður að vera heiltala stærri eða jöfn 0',
+        message: 'Staðsetning verður að vera heiltala stærri eða jöfn 0',
       });
     }
   }
-  
-  if (!(completed === false || completed === true)) {
-    errors.push({
-      field: 'completed',
-      error: 'Lokið verður að vera boolean gildi',
-    });
+
+  if (!isEmpty(completed)) {
+    if (typeof completed !== 'boolean') {
+      errors.push({
+        field: 'completed',
+        message: 'Lokið verður að vera boolean gildi',
+      });
+    }
   }
+
   return errors;
 }
 
-async function listAssignments(order = 'ASC', Completed){
-  
-  if(Completed === 'true'){
-    if(order.toLowerCase() === 'desc'){
-      const result = await getCompletedAssignmets('DESC');
-      return {
-        success: true,
-        item: result.rows,
-      };
-    }
-  
-    const result = await getCompletedAssignmets('ASC');
-    return {
-      success: true,
-      item: result.rows,
-    };
+/**
+ * Skilar lista af todo items. Geta verið röðuð, aðeins kláruð eða aðeins ekki
+ * kláruð.
+ *
+ * @param {string} [order = 'asc'] Röðun á items, sjálfgefið í hækkandi röð. Ef
+ *                                 `desc` er sent inn er raðað í lækkandi röð.
+ * @param {boolean} [completed = undefined] Hvort birta eigi kláruð eða ekki
+*                                  kláruð, getur verið tómt til að fá öll.
+ * @returns {array} Fylki af todo items
+ */
+async function listTodos(order = '', completed = undefined) {
+  let result;
+
+  const orderString = order.toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+
+  if (completed === 'false' || completed === 'true') {
+    const completedAsBoolean = completed !== 'false';
+    const q = `
+    SELECT
+      id, title, position, due, created, updated, completed
+    FROM todos
+    WHERE completed = $1
+    ORDER BY created ${orderString}, id`;
+
+    result = await query(q, [completedAsBoolean]);
+  } else {
+    const q = `
+    SELECT
+      id, title, position, due, created, updated, completed
+    FROM todos
+    ORDER BY created ${orderString}, id`;
+
+    result = await query(q);
   }
 
-  if(order.toLowerCase() === 'desc'){
-    const result = await getAssignmets('DESC');
-    return {
-      success: true,
-      item: result.rows,
-    };
-  }
-
-  const result = await getAssignmets('ASC');
-  return {
-    success: true,
-    item: result.rows,
-  };
+  return result.rows;
 }
 
-async function newAsignment(title, position, completed = false, due){
-  
-  const validationResult = validate(item.title, item.due, item.position, item.completed);
+/**
+ * Sækir stakt todo item eftir auðkenni.
+ *
+ * @param {number} id Auðkenni á todo
+ * @returns {object} Todo item eða null ef ekkert fannst
+ */
+async function readTodo(id) {
+  const q = `
+    SELECT
+      id, title, position, due, created, updated, completed
+    FROM
+      todos
+    WHERE id = $1`;
 
-  if (validationResult.length > 0) {
+  let result = null;
+
+  try {
+    result = await query(q, [id]);
+  } catch (e) {
+    console.warn('Error fetching todo', e);
+  }
+
+  if (!result || result.rows.length === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+}
+
+/**
+ * Býr til todo item.
+ *
+ * @param {TodoItem} todo Todo item til að búa til.
+ * @returns {Result} Niðurstaða þess að búa til item
+ */
+async function createTodo({ title, due, position } = {}) {
+  const validation = validate({ title, due, position });
+
+  if (validation.length > 0) {
     return {
       success: false,
       notFound: false,
-      validation: validationResult,
+      validation,
+      item: null,
     };
   }
 
-  const result = await createAssignmet([xss(title), xss(position), xss(completed), xss(due)]);
-  return {
-    success: true,
-    item: result.rows,
-  };
-}
-
-async function getById(id){
-  if (isNaN(parseInt(id, 10))) {
-    return {
-      success: false,
-      notFound: true,
-      validation: [],
-    };
-  }
-  const result = await getAssignmet(id);
-  return {
-    success: true,
-    item: result.rows,
-  };
-}
-
-async function updateById(id, item) {
-
-  if (isNaN(parseInt(id, 10))) { // eslint-disable-line
-    return {
-      success: false,
-      notFound: true,
-      validation: [],
-    };
-  }
-
-  const result = await getAssignmet(id);
-
-  if (result.rows.length === 0) {
-    return {
-      success: false,
-      notFound: true,
-      validation: [],
-    };
-  }
-
-  const validationResult = validate(item.title, item.due, item.position, item.completed);
-
-  if (validationResult.length > 0) {
-    return {
-      success: false,
-      notFound: false,
-      validation: validationResult,
-    };
-  }
-
-  const changedColumns = [
-    !isEmpty(item.title) ? 'title' : null,
-    !isEmpty(item.due) ? 'due' : null,
-    !isEmpty(item.position) ? 'position' : null,
-    !isEmpty(item.completed) ? 'completed' : null,
+  const columns = [
+    'title',
+    due ? 'due' : null,
+    position ? 'position' : null,
   ].filter(Boolean);
 
-  const changedValues = [
-    !isEmpty(item.title) ? xss(item.title) : null,
-    !isEmpty(item.due) ? xss(item.due) : null,
-    !isEmpty(item.position) ? xss(item.position) : null,
-    item.completed,
+  const values = [
+    xss(title),
+    due ? xss(due) : null,
+    position ? xss(position) : null,
   ].filter(Boolean);
-  const updates = [id, ...changedValues];
 
-  const updatedColumnsQuery =
-    changedColumns
-      .map((column, i) => `${column} = $${i + 2}`);
+  const params = values.map((_, i) => `$${i + 1}`);
 
-  const updateResult = await updateAssignment(updates, updatedColumnsQuery.join(', '));
+  const sqlQuery = `
+    INSERT INTO todos (${columns.join(',')})
+    VALUES (${params})
+    RETURNING id, title, position, due, created, updated, completed`;
+
+  const result = await query(sqlQuery, values);
 
   return {
     success: true,
-    item: updateResult.rows[0],
-  };
-}
-
-async function deleteById(id){
-  if (isNaN(parseInt(id, 10))) { // eslint-disable-line
-    return {
-      success: false,
-      notFound: true,
-      validation: [],
-    };
-  }
-  result = await deleteRow(id);
-  return {
-    success: true,
+    notFound: false,
+    validation: [],
     item: result.rows[0],
   };
 }
 
+/**
+ * Uppfærir todo item.
+ *
+ * @param {Number} id Auðkenni á todo
+ * @param {TodoItem} todo Todo item með gildum sem á að uppfæra
+ * @returns {Result} Niðurstaða þess að búa til item
+ */
+async function updateTodo(id, { title, due, position, completed }) {
+  const validation = validate({ title, due, position, completed }, true);
+
+  if (validation.length > 0) {
+    return {
+      success: false,
+      validation,
+    };
+  }
+
+  const filteredValues = [
+    xss(title),
+    due ? xss(due) : null,
+    position ? xss(position) : null,
+  ]
+    .filter(Boolean);
+
+  if (completed != null) {
+    filteredValues.push(Boolean(completed));
+  }
+
+  const updates = [
+    title ? 'title' : null,
+    due ? 'due' : null,
+    position ? 'position' : null,
+    completed != null ? 'completed' : null,
+  ]
+    .filter(Boolean)
+    .map((field, i) => `${field} = $${i + 2}`);
+
+  const sqlQuery = `
+    UPDATE todos
+    SET ${updates}, updated = current_timestamp WHERE id = $1
+    RETURNING id, title, position, due, created, updated, completed`;
+  const values = [id, ...filteredValues];
+
+  const result = await query(sqlQuery, values);
+
+  if (result.rowCount === 0) {
+    return {
+      success: false,
+      validation: [],
+      notFound: true,
+      item: null,
+    };
+  }
+
+  return {
+    success: true,
+    validation: [],
+    notFound: false,
+    item: result.rows[0],
+  };
+}
+
+async function deleteTodo(id) {
+  const q = 'DELETE FROM todos WHERE id = $1';
+
+  const result = await query(q, [id]);
+
+  return result.rowCount === 1;
+}
+
 module.exports = {
-  listAssignments,
-  newAsignment,
-  getById,
-  updateById,
-  deleteById
+  listTodos,
+  createTodo,
+  readTodo,
+  updateTodo,
+  deleteTodo,
 };
